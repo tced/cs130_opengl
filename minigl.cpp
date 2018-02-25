@@ -41,13 +41,12 @@ MGLpoly_mode curr_type;
 MGLmatrix_mode mode_matrix;  
 mat4 projection_matrix;
 mat4 modelview_matrix;   
-
 mat4 I = {{1,0,0,0,
            0,1,0,0, 
            0,0,1,0, 
            0,0,0,1}}; 
 std::vector <mat4> projection_stack = {I}; 
-std::vector <mat4> modelview_stack = {I};  
+std::vector <mat4> modelview_stack = {I}; 
 //creating a vertex list 
 struct Vertex {
    vec4 position; 
@@ -360,6 +359,12 @@ void mglTranslate(MGLfloat x,
                   MGLfloat y,
                   MGLfloat z)
 {
+   mat4 translate_matrix = {{1,0,0,0,
+  			     0,1,0,0,
+                             0,0,1,0,
+  			     x,y,z,1}}; 
+   mat4& curr_stack = top_of_active_matrix_stack();
+   curr_stack = translate_matrix * curr_stack; 
 }
 
 /**
@@ -372,6 +377,19 @@ void mglRotate(MGLfloat angle,
                MGLfloat y,
                MGLfloat z)
 {
+    MGLfloat c = cos(angle); 
+    MGLfloat s = sin(angle);
+    float normal = sqrt(x*x + y*y + z*z); 
+    x = x/normal; 
+    y = y/normal;
+    z = z/normal;  
+
+    mat4 rotate_matrix = {{x*x*(1-c)+c,x*y*(1-c)-z*s, x*z*(1-c)+y*s, 0,
+			   y*x*(1-c)+z*s,y*y*(1-c)+c, y*z*(1-c)-x*s, 0,
+   			   x*z*(1-c)-y*s, y*z*(1-c)+x*s, z*z*(1-c)+c, 0,
+			   0,0,0,1}}; 
+    mat4& curr_stack = top_of_active_matrix_stack(); 
+    curr_stack = rotate_matrix * curr_stack;  
 }
 
 /**
