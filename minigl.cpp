@@ -38,7 +38,7 @@ typedef vec<MGLfloat,2> vec2;   //data structure storing a 2 dimensional vector,
 //*****GLOBAL VARIABLES AND FUNCTIONS****//////// 
 vec4 curr_color;
 MGLpoly_mode curr_type;
-MGLmatrix_mode curr_matrix;  
+MGLmatrix_mode mode_matrix;  
 mat4 projection_matrix;
 mat4 modelview_matrix;   
 //creating a vertex list 
@@ -64,7 +64,7 @@ inline void MGL_ERROR(const char* description) {
 
 //*******HELPER FUNCTIONS******// 
 mat4& current_matrix() { 
-   if(curr_matrix == MGL_PROJECTION) {
+   if(mode_matrix == MGL_PROJECTION) {
        return projection_matrix; 
    }
    else {
@@ -79,17 +79,24 @@ MGLfloat GetArea(vec2 a, vec2 b, vec2 c) {
 
  
 void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* data) {
-    vec2 a, b, c; 
+    //vec2 a, b, c; 
+    MGLfloat i1, j1;  
+    MGLfloat i2, j2; 
+    MGLfloat i3, j3; 
     float area, alpha, beta, gamma; 
-    a[0] = (tri.A.position[0] + 1)*width/2-0.5; 
-    a[1] = (tri.A.position[1] + 1)*height/2-0.5; 
+    
+    i1 = (tri.A.position[0]/tri.A.position[3] + 1)*width/2-0.5; 
+    j1 = (tri.A.position[1]/tri.A.position[3] + 1)*height/2-0.5; 
+    vec2 a(i1, j1); 
 
-    b[0] = (tri.B.position[0] + 1)*width/2-0.5; 
-    b[1] = (tri.B.position[1] + 1)*height/2-0.5; 
-
-    c[0] = (tri.C.position[0] + 1)*width/2-0.5; 
-    c[1] = (tri.C.position[1] + 1)*height/2-0.5; 
-
+    i2 = (tri.B.position[0]/tri.B.position[3] + 1)*width/2-0.5; 
+    j2 = (tri.B.position[1]/tri.B.position[3] + 1)*height/2-0.5; 
+    vec2 b(i2, j2); 
+ 
+    i3 = (tri.C.position[0]/tri.C.position[3] + 1)*width/2-0.5; 
+    j3 = (tri.C.position[1]/tri.C.position[3] + 1)*height/2-0.5; 
+    vec2 c(i3, j3);     
+    
     area = GetArea(a,b,c); 
  
     for(int i = 0; i < width; ++i) { 
@@ -102,7 +109,8 @@ void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* da
            beta = GetArea(a,p,c)/area; 
            gamma = GetArea(a,b,p)/area; 
 
-           if (alpha >= 0 && beta >=0 && gamma >= 0) {
+           if ((alpha >= 0 && beta >=0 && gamma >= 0) 
+              && (gamma >= 0 && gamma <= 1)){
               data[i+j*width] = Make_Pixel(tri.A.color[0]*255, tri.A.color[1]*255,tri.A.color[2]*255); 
            }
        }
@@ -220,7 +228,7 @@ void mglVertex3(MGLfloat x,
    position_4d = projection_matrix * modelview_matrix * position_4d; 
    position.position = position_4d; 
    position.color = curr_color;  
-   
+  
    list_vertices.push_back(position);   
 }
 
@@ -229,7 +237,7 @@ void mglVertex3(MGLfloat x,
  */
 void mglMatrixMode(MGLmatrix_mode mode)
 {
-    curr_matrix = mode; 
+    mode_matrix = mode; 
 }
 
 /**
@@ -259,9 +267,10 @@ void mglLoadIdentity()
                      0,0,1,0,
                      0,0,0,1}};
 
-   mat4& curr_mat = current_matrix(); 
-   curr_mat = identity_matrix;
-     
+  //projection_matrix = identity_matrix; 
+  //modelview_matrix = identity_matrix;  
+  mat4& matrix = current_matrix(); 
+  matrix = identity_matrix; 
 }
 
 /**
@@ -338,21 +347,19 @@ void mglFrustum(MGLfloat left,
                 MGLfloat top,
                 MGLfloat near,
                 MGLfloat far)
-{
-   float t_x, t_y, t_z; 
-   t_x = -(right+left)/(right-left);
-   t_y = -(top+bottom)/(top-bottom); 
-   t_z = -(far+near)/(far-near); 
+{  
+   float A, B, C, D; 
+   A = (right+left)/(right-left);
+   B = (top+bottom)/(top-bottom); 
+   C = -(far+near)/(far-near); 
+   D = -2*(far*near)/(far-near); 
 
-   mat4& curr_matrix = current_matrix(); 
-
-   mat4 temp_matrix = {{2/(right-left),0,0,0, 
-                        0,2/(top-bottom),0,0,
-                        0,0,-2/(far-near),0, 
-                        t_x, t_y, t_z, 1}}; 
-
-   curr_matrix = temp_matrix * curr_matrix; 
-
+   mat4& matrix = current_matrix(); 
+   mat4 frustum_matrix = {{(2*near)/(right-left),0,0,0, 
+                        0,(2*near)/(top-bottom),0,0,
+                        A,B,C,-1, 
+                        0, 0, D, 0}}; 
+   matrix = frustum_matrix * matrix; 
 }
 
 /**
@@ -365,20 +372,20 @@ void mglOrtho(MGLfloat left,
               MGLfloat top,
               MGLfloat near,
               MGLfloat far)
-{
+{   
    float t_x, t_y, t_z; 
    t_x = -(right+left)/(right-left);
    t_y = -(top+bottom)/(top-bottom); 
    t_z = -(far+near)/(far-near); 
 
-   mat4& curr_matrix = current_matrix(); 
+   mat4& matrix = current_matrix(); 
 
-   mat4 temp_matrix = {{2/(right-left),0,0,0,
+   mat4 ortho_matrix = {{2/(right-left),0,0,0,
                  0,2/(top-bottom),0,0,
                  0,0,-2/(far-near),0,
                  t_x, t_y, t_z, 1}}; 
   
-   curr_matrix = temp_matrix * curr_matrix; 
+   matrix = ortho_matrix * matrix; 
 }
 
 
