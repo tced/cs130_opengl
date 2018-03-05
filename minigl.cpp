@@ -41,14 +41,8 @@ MGLpoly_mode curr_type;
 MGLmatrix_mode mode_matrix;  
 mat4 projection_matrix;
 mat4 modelview_matrix;   
-mat4 I = {{1,0,0,0,
-           0,1,0,0, 
-           0,0,1,0, 
-           0,0,0,1}}; 
-//std::vector <mat4> projection_stack = {I};
-vector<mat4> projection_stack(1); 
-vector<mat4>modelview_stack(1);  
-//std::vector <mat4> modelview_stack = {I}; 
+std::vector <mat4> projection_stack(1);
+std::vector <mat4> modelview_stack(1); 
 //creating a vertex list 
 struct Vertex {
    vec4 position; 
@@ -84,10 +78,12 @@ mat4& top_of_active_matrix_stack(){
    if(mode_matrix == MGL_PROJECTION) {
      return projection_stack.back(); 
    }
-   if(mode_matrix == MGL_MODELVIEW) {
+   else if(mode_matrix == MGL_MODELVIEW) {
      return modelview_stack.back();
    }
-};
+   else {} 
+
+}
  
  
 //CREATED: helper function for rasterize_triangle functn
@@ -246,7 +242,7 @@ void mglVertex3(MGLfloat x,
    vertex.position[0] = x; 
    vertex.position[1] = y; 
    vertex.position[2] = z; 
-   vertex.position[3] = 1;
+   vertex.position[3] = 1.0f;
    vertex.position = projection_stack.back() * modelview_stack.back() * vertex.position; 
    list_vertices.push_back(vertex);
 
@@ -257,7 +253,8 @@ void mglVertex3(MGLfloat x,
  */
 void mglMatrixMode(MGLmatrix_mode mode)
 {
-    mode_matrix = mode; 
+    mode_matrix = mode;
+    cout << "this is the matrix mode: " << mode_matrix;  
 }
 
 /**
@@ -290,12 +287,14 @@ void mglPopMatrix()
 {
     
    if (mode_matrix == MGL_PROJECTION) {
-      //if(!projection_stack.empty()) { 
+      if(!projection_stack.empty()) { 
          projection_stack.pop_back(); 
-      //}
+      }
    }
-   else { 
+   else {
+      if(!modelview_stack.empty()){  
        modelview_stack.pop_back(); 
+      }
     }
     
 }
@@ -363,8 +362,7 @@ void mglMultMatrix(const MGLfloat *matrix)
     for(uint i = 0; i < 16; ++i) {
        mult_matrix.values[i] = matrix[i]; 
     }
-    //curr_matrix = curr_matrix * mult_matrix; 
-    curr_matrix = curr_matrix * mult_matrix; 
+    curr_matrix = mult_matrix * curr_matrix; 
 }
 
 /**
@@ -393,18 +391,18 @@ void mglRotate(MGLfloat angle,
                MGLfloat y,
                MGLfloat z)
 {
-    MGLfloat c = cos(angle); 
-    MGLfloat s = sin(angle);
+    mat4& curr_stack = top_of_active_matrix_stack(); 
+    MGLfloat c = cos(angle * M_PI/180); 
+    MGLfloat s = sin(angle * M_PI/180);
     MGLfloat normal = sqrt(x*x + y*y + z*z); 
     x = x/normal; 
     y = y/normal;
     z = z/normal;  
 
-    mat4 rotate_matrix = {{x*x*(1-c)+c,x*y*(1-c)-z*s, x*z*(1-c)+y*s, 0,
-			   y*x*(1-c)+z*s,y*y*(1-c)+c, y*z*(1-c)-x*s, 0,
-   			   x*z*(1-c)-y*s, y*z*(1-c)+x*s, z*z*(1-c)+c, 0,
-			   0,0,0,1}}; 
-    mat4& curr_stack = top_of_active_matrix_stack(); 
+    mat4 rotate_matrix = {{x*x*(1-c)+c,y*x*(1-c)+z*s, x*z*(1-c)-y*s, 0,
+			   x*y*(1-c)-z*s,y*y*(1-c)+c, y*z*(1-c)+x*s, 0,
+   			   x*z*(1-c)+y*s, y*z*(1-c)-x*s, z*z*(1-c)+c, 0,
+			   0,0,0,1}};
     curr_stack = curr_stack * rotate_matrix;  
 }
 
@@ -423,7 +421,6 @@ void mglScale(MGLfloat x,
 		          0, 0, 0, 1}}; 
   mat4& curr_matrix = top_of_active_matrix_stack(); 
   curr_matrix = curr_matrix * scale_matrix;  
-  
 }
 
 
@@ -444,15 +441,14 @@ void mglFrustum(MGLfloat left,
    C = -(far+near)/(far-near); 
    D = -2*(far*near)/(far-near); 
 
-   mat4 frustum_matrix = {{(2*near)/(right-left),0,0,0, 
-                        0,(2*near)/(top-bottom),0,0,
+   mat4 frustum_matrix = {{2*near/(right-left),0,0,0, 
+                        0,2*near/(top-bottom),0,0,
                         A,B,C,-1, 
                         0, 0, D, 0}}; 
    //mat4& matrix = current_matrix(); 
    //matrix = frustum_matrix * matrix; 
    mat4& curr_matrix = top_of_active_matrix_stack(); 
-   //curr_matrix = curr_matrix * frustum_matrix;
-   curr_matrix = frustum_matrix * curr_matrix; 
+   curr_matrix = curr_matrix * frustum_matrix;
 }
 
 /**
@@ -480,8 +476,7 @@ void mglOrtho(MGLfloat left,
    //mat4& matrix = current_matrix(); 
    //matrix = ortho_matrix * matrix; 
    mat4& curr_matrix = top_of_active_matrix_stack(); 
-   //curr_matrix = curr_matrix * ortho_matrix; 
-   curr_matrix = ortho_matrix * curr_matrix; 
+   curr_matrix = curr_matrix * ortho_matrix; 
 }
 
 
