@@ -14,7 +14,7 @@ glVertex2 1 -1
 glVertex2 1 1
 glVertex2 -1 1
 glEnd
-glPopMatrix
+glPopMatrix 
 glColor 1 0 0
 glBegin GL_TRIANGLES
 glVertex3 0.5 0.25 0.5
