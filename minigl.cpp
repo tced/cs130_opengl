@@ -43,6 +43,8 @@ mat4 projection_matrix;
 mat4 modelview_matrix;   
 std::vector <mat4> projection_stack(1);
 std::vector <mat4> modelview_stack(1); 
+//global variable for z-buffer 
+vector <vector<MGLfloat>> z_buffer;  
 //creating a vertex list 
 struct Vertex {
    vec4 position; 
@@ -91,24 +93,40 @@ MGLfloat GetArea(vec2 a, vec2 b, vec2 c) {
    return (a[0] * (b[1]-c[1]) + a[1] * (c[0]-b[0]) + (b[0]*c[1]-b[1]*c[0])); 
 }
 
- 
+
 void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* data) {
+
+    Triangle curr_triangle = tri;   
     //vec2 a, b, c; 
     MGLfloat i1, j1;  
     MGLfloat i2, j2; 
     MGLfloat i3, j3; 
+    
     float area, alpha, beta, gamma; 
     
-    i1 = ((tri.A.position[0]/tri.A.position[3] + 1)*width)/2-0.5; 
-    j1 = ((tri.A.position[1]/tri.A.position[3] + 1)*height)/2-0.5; 
+    //normalizing position by dividing by position[3] 
+    curr_triangle.A.position[0] = tri.A.position[0]/ tri.A.position[3];
+    curr_triangle.A.position[1] = tri.A.position[1] / tri.A.position[3];
+    curr_triangle.A.position[2] = tri.A.position[2] / tri.A.position[3];
+
+    curr_triangle.B.position[0] = tri.B.position[0] / tri.B.position[3];
+    curr_triangle.B.position[1] = tri.B.position[1] / tri.B.position[3];
+    curr_triangle.B.position[2] = tri.B.position[2] / tri.B.position[3];
+
+    curr_triangle.C.position[0] = tri.C.position[0] / tri.C.position[3];
+    curr_triangle.C.position[1] = tri.C.position[1] / tri.C.position[3];
+    curr_triangle.C.position[2] = tri.C.position[2] / tri.C.position[3];
+
+    i1 = ((curr_triangle.A.position[0] + 1)*width)/2-0.5; 
+    j1 = ((curr_triangle.A.position[1] + 1)*height)/2-0.5; 
     vec2 a(i1, j1); 
 
-    i2 = ((tri.B.position[0]/tri.B.position[3] + 1)*width)/2-0.5; 
-    j2 = ((tri.B.position[1]/tri.B.position[3] + 1)*height)/2-0.5; 
+    i2 = ((curr_triangle.B.position[0] + 1)*width)/2-0.5; 
+    j2 = ((curr_triangle.B.position[1] + 1)*height)/2-0.5; 
     vec2 b(i2, j2); 
  
-    i3 = ((tri.C.position[0]/tri.C.position[3] + 1)*width)/2-0.5; 
-    j3 = ((tri.C.position[1]/tri.C.position[3] + 1)*height)/2-0.5; 
+    i3 = ((curr_triangle.C.position[0] + 1)*width)/2-0.5; 
+    j3 = ((curr_triangle.C.position[1] + 1)*height)/2-0.5; 
     vec2 c(i3, j3);     
     
     area = GetArea(a,b,c); 
@@ -118,14 +136,26 @@ void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* da
            vec2 p; 
            p[0] = i; 
            p[1] = j; 
-   
+  
+           area = GetArea(a,b,c);  
            alpha = GetArea(p,b,c)/area; 
            beta = GetArea(a,p,c)/area; 
            gamma = GetArea(a,b,p)/area; 
 
            if ((alpha >= 0 && beta >=0 && gamma >= 0) 
-              && (gamma >= 0 && gamma <= 1)){
-              data[i+j*width] = Make_Pixel(tri.A.color[0]*255, tri.A.color[1]*255,tri.A.color[2]*255); 
+              && gamma >= 0  
+              && gamma <= 1){
+               
+              //calculate z-interpolation 
+              MGLfloat z_depth = alpha * curr_triangle.A.position[2] + beta * curr_triangle.B.position[2] + gamma * curr_triangle.C.position[2];
+              
+              if (z_depth < z_buffer[i][j]) {  
+                  data[i+j*width] = Make_Pixel(
+		       255 * (curr_triangle.A.color[0] * alpha + curr_triangle.B.color[0] * beta + curr_triangle.C.color[0] * gamma), 
+                       255 * (curr_triangle.A.color[1] * alpha + curr_triangle.B.color[1] * beta + curr_triangle.C.color[1] * gamma),
+                       255 * (curr_triangle.A.color[2] * alpha + curr_triangle.B.color[2] * beta + curr_triangle.C.color[2] * gamma)); 
+                  z_buffer[i][j] = z_depth; 
+              }
            }
        }
     }
@@ -149,19 +179,24 @@ void mglReadPixels(MGLsize width,
                    MGLsize height,
                    MGLpixel *data)
 {
-   //fill whole pixel data black  
-   for(unsigned int i = 0; i< width; ++i) {
-     for(unsigned int j = 0; j < height; ++j) {
-        data[i+j*width] = Make_Pixel(0,0,0); 
-     }
+   Make_Pixel(0,0,0); 
+   z_buffer.resize(width); 
+  
+   for(size_t i = 0; i < width; ++i) {
+      z_buffer[i].resize(height); 
    }
-   //Make_Pixel(0,0,0); 
-
+   for(size_t i = 0; i < width; ++i) {
+      for(size_t j = 0; j < height; ++j) {
+          z_buffer[i][j] = 2; 
+      }
+   }
+   
    //call rasterize_Triangle to raster each triangle on data then clear the triangle list 
-   for (unsigned int i = 0; i < list_triangles.size(); ++i) {
+   for (size_t i = 0; i < list_triangles.size(); ++i) {
        Rasterize_Triangle(list_triangles[i], width, height, data); 
    }
    list_triangles.clear(); 
+  
 }
 
 /**
@@ -254,7 +289,7 @@ void mglVertex3(MGLfloat x,
 void mglMatrixMode(MGLmatrix_mode mode)
 {
     mode_matrix = mode;
-    cout << "this is the matrix mode: " << mode_matrix;  
+    //cout << "this is the matrix mode: " << mode_matrix;  
 }
 
 /**
@@ -265,15 +300,11 @@ void mglPushMatrix()
 {
    mat4& pos = top_of_active_matrix_stack();   
    if (mode_matrix == MGL_PROJECTION) {
-      //if(!projection_stack.empty()) {
         projection_stack.push_back(pos); 
-      //}
    }  
 
    else {
-      //if(!modelview_stack.empty()) { 
       	modelview_stack.push_back(pos);
-      //} 
    }
 
  
@@ -298,8 +329,8 @@ void mglPopMatrix()
     }
     
 }
-
-/**
+/* 
+*
  * Replace the current matrix with the identity.
  */
 void mglLoadIdentity()
@@ -329,17 +360,13 @@ void mglLoadIdentity()
  */
 void mglLoadMatrix(const MGLfloat *matrix)
 {
-   if (mode_matrix == MGL_PROJECTION) {
-      for (uint i = 0; i < 16; ++i) {
-          projection_matrix.values[i] = matrix[i]; 
-      }
+   mat4 temp_matrix; 
+   mat4& curr_matrix = top_of_active_matrix_stack(); 
+
+   for (uint i = 0; i < 16; ++i) {
+       temp_matrix.values[i] = matrix[i]; 
    }
-  
-   if (mode_matrix == MGL_MODELVIEW) {
-      for (uint i = 0; i < 16; ++i) {
-          modelview_matrix.values[i] = matrix[i]; 
-      }
-   }
+   curr_matrix = temp_matrix;   
 }
 
 /**
@@ -357,12 +384,11 @@ void mglLoadMatrix(const MGLfloat *matrix)
 void mglMultMatrix(const MGLfloat *matrix)
 {
     mat4 mult_matrix; 
-    mult_matrix.make_zero(); 
     mat4& curr_matrix = top_of_active_matrix_stack(); 
-    for(uint i = 0; i < 16; ++i) {
+    for(unsigned int i = 0; i < 16; ++i) {
        mult_matrix.values[i] = matrix[i]; 
     }
-    curr_matrix = mult_matrix * curr_matrix; 
+    curr_matrix = curr_matrix * mult_matrix;
 }
 
 /**
@@ -441,8 +467,8 @@ void mglFrustum(MGLfloat left,
    C = -(far+near)/(far-near); 
    D = -2*(far*near)/(far-near); 
 
-   mat4 frustum_matrix = {{2*near/(right-left),0,0,0, 
-                        0,2*near/(top-bottom),0,0,
+   mat4 frustum_matrix = {{(2*near)/(right-left),0,0,0, 
+                        0,(2*near)/(top-bottom),0,0,
                         A,B,C,-1, 
                         0, 0, D, 0}}; 
    //mat4& matrix = current_matrix(); 
