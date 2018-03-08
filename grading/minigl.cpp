@@ -93,7 +93,20 @@ MGLfloat GetArea(vec2 a, vec2 b, vec2 c) {
    return (a[0] * (b[1]-c[1]) + a[1] * (c[0]-b[0]) + (b[0]*c[1]-b[1]*c[0])); 
 }
 
+vector<MGLfloat> color_interpolation(MGLfloat alpha, MGLfloat beta, MGLfloat gamma, Triangle tri) {
+      vector<MGLfloat> list_of_colors;
 
+      MGLfloat k = (alpha / tri.A.position[3])
+                      + (beta / tri.B.position[3]) 
+                      + (gamma / tri.C.position[3]); 
+      list_of_colors.push_back((alpha / tri.A.position[3]) / k); 
+      list_of_colors.push_back((beta / tri.B.position[3]) / k); 
+      list_of_colors.push_back((gamma / tri.C.position[3]) / k); 
+
+      return list_of_colors; 
+ 
+}
+ 
 void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* data) {
 
     Triangle curr_triangle = tri;   
@@ -102,10 +115,10 @@ void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* da
     MGLfloat i2, j2; 
     MGLfloat i3, j3; 
     
-    float area, alpha, beta, gamma; 
+    MGLfloat area, alpha, beta, gamma; 
     
-    //normalizing position by dividing by position[3] 
-    curr_triangle.A.position[0] = tri.A.position[0]/ tri.A.position[3];
+    //normalizing position by dividing by w, position[3] 
+    curr_triangle.A.position[0] = tri.A.position[0] / tri.A.position[3];
     curr_triangle.A.position[1] = tri.A.position[1] / tri.A.position[3];
     curr_triangle.A.position[2] = tri.A.position[2] / tri.A.position[3];
 
@@ -117,50 +130,53 @@ void Rasterize_Triangle(const Triangle& tri, int width, int height, MGLpixel* da
     curr_triangle.C.position[1] = tri.C.position[1] / tri.C.position[3];
     curr_triangle.C.position[2] = tri.C.position[2] / tri.C.position[3];
 
-    i1 = ((curr_triangle.A.position[0] + 1)*width)/2-0.5; 
-    j1 = ((curr_triangle.A.position[1] + 1)*height)/2-0.5; 
+    i1 = ((curr_triangle.A.position[0] + 1) * width / 2)-0.5; 
+    j1 = ((curr_triangle.A.position[1] + 1) * height/ 2)-0.5; 
     vec2 a(i1, j1); 
 
-    i2 = ((curr_triangle.B.position[0] + 1)*width)/2-0.5; 
-    j2 = ((curr_triangle.B.position[1] + 1)*height)/2-0.5; 
+    i2 = ((curr_triangle.B.position[0] + 1) * width / 2)-0.5; 
+    j2 = ((curr_triangle.B.position[1] + 1) * height /2)-0.5; 
     vec2 b(i2, j2); 
  
-    i3 = ((curr_triangle.C.position[0] + 1)*width)/2-0.5; 
-    j3 = ((curr_triangle.C.position[1] + 1)*height)/2-0.5; 
-    vec2 c(i3, j3);     
+    i3 = ((curr_triangle.C.position[0] + 1) * width /2)-0.5; 
+    j3 = ((curr_triangle.C.position[1] + 1) * height /2)-0.5; 
+    vec2 c(i3, j3);
     
     area = GetArea(a,b,c); 
  
     for(int i = 0; i < width; ++i) { 
        for (int j = 0; j < height; ++j) {
-           vec2 p; 
+           vec2 p;  
            p[0] = i; 
            p[1] = j; 
   
-           area = GetArea(a,b,c);  
-           alpha = GetArea(p,b,c)/area; 
-           beta = GetArea(a,p,c)/area; 
-           gamma = GetArea(a,b,p)/area; 
+           alpha = GetArea(p,b,c) / area; 
+           beta = GetArea(a,p,c)  / area;
+           gamma = GetArea(a,b,p) / area;  
+           if (alpha >= 0 && beta >= 0 && gamma >=0) {  
+            
+            
+              //calculate z-interpolation pos
+               MGLfloat z_depth = alpha * (curr_triangle.A.position[2]) + beta * (curr_triangle.B.position[2]) + gamma * (curr_triangle.C.position[2]);
+             
+              if(z_depth >= -1 && z_depth <= 1 && (z_depth < z_buffer[i][j])) {
+                   vector <MGLfloat> color = color_interpolation(alpha, beta, gamma, curr_triangle); 
+                   MGLfloat red = tri.A.color[0] * color[0] + tri.B.color[0] * color[1] + tri.C.color[0] * color[2];
+  		   MGLfloat green = tri.A.color[1] * color[0] + tri.B.color[1] * color[1] + tri.C.color[1] * color[2]; 
+                   MGLfloat blue = tri.A.color[2] * color[0] + tri.B.color[2] * color[1] + tri.C.color[2] * color[2]; 
 
-           if ((alpha >= 0 && beta >=0 && gamma >= 0) 
-              && gamma >= 0  
-              && gamma <= 1){
-               
-              //calculate z-interpolation 
-              MGLfloat z_depth = alpha * curr_triangle.A.position[2] + beta * curr_triangle.B.position[2] + gamma * curr_triangle.C.position[2];
+                   data[i + j * width] = Make_Pixel(255 * red, 255 * green, 255 * blue); 
+                   z_buffer[i][j] = z_depth;           
+              } 
               
-              if (z_depth < z_buffer[i][j]) {  
-                  data[i+j*width] = Make_Pixel(
-		       255 * (curr_triangle.A.color[0] * alpha + curr_triangle.B.color[0] * beta + curr_triangle.C.color[0] * gamma), 
-                       255 * (curr_triangle.A.color[1] * alpha + curr_triangle.B.color[1] * beta + curr_triangle.C.color[1] * gamma),
-                       255 * (curr_triangle.A.color[2] * alpha + curr_triangle.B.color[2] * beta + curr_triangle.C.color[2] * gamma)); 
-                  z_buffer[i][j] = z_depth; 
-              }
            }
        }
     }
- 
+
+
 }
+
+
 //******END OF HELPER FUNCTIONS****//// 
 
 /**
@@ -182,19 +198,19 @@ void mglReadPixels(MGLsize width,
    Make_Pixel(0,0,0); 
    z_buffer.resize(width); 
   
-   for(size_t i = 0; i < width; ++i) {
+   for(unsigned int i = 0; i < width; ++i) 
       z_buffer[i].resize(height); 
-   }
-   for(size_t i = 0; i < width; ++i) {
-      for(size_t j = 0; j < height; ++j) {
+   
+   for(unsigned int i = 0; i < width; ++i) {
+      for(unsigned int j = 0; j < height; ++j) {
           z_buffer[i][j] = 2; 
       }
    }
    
    //call rasterize_Triangle to raster each triangle on data then clear the triangle list 
-   for (size_t i = 0; i < list_triangles.size(); ++i) {
+   for (size_t i = 0; i < list_triangles.size(); ++i) 
        Rasterize_Triangle(list_triangles[i], width, height, data); 
-   }
+   
    list_triangles.clear(); 
   
 }
@@ -465,7 +481,7 @@ void mglFrustum(MGLfloat left,
    A = (right+left)/(right-left);
    B = (top+bottom)/(top-bottom); 
    C = -(far+near)/(far-near); 
-   D = -2*(far*near)/(far-near); 
+   D = -(2*far*near)/(far-near); 
 
    mat4 frustum_matrix = {{(2*near)/(right-left),0,0,0, 
                         0,(2*near)/(top-bottom),0,0,
